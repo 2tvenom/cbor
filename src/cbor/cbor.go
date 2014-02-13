@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"unicode/utf8"
 	"reflect"
+	"strings"
 )
 
 const (
@@ -215,6 +216,8 @@ func Encode(variable interface{}) ([]byte, error) {
 		return encodeArray(variable)
 	case reflect.Map:
 		return encodeMap(variable)
+	case reflect.Struct:
+		return encodeStruct(variable)
 	case reflect.Bool:
 		return encodeBool(variable.(bool))
 	case reflect.Float32:
@@ -295,6 +298,47 @@ func encodeArray(variable interface{}) ([]byte, error) {
 
 		if err != nil {
 			return nil, err
+		}
+
+		buff = append(buff, elementBuff...)
+	}
+
+	return buff, nil
+}
+
+func encodeStruct(variable interface{}) ([]byte, error) {
+	majorType := majorTypeMap
+
+	inputStructValue:= reflect.ValueOf(variable)
+	inputStructType:= inputStructValue.Type()
+
+	length := inputStructValue.NumField()
+
+	buff, err := packNumber(majorType, uint64(length))
+
+	if err != nil {
+		return nil, err
+	}
+
+	//struct encode
+	for i:=0; i<length; i++ {
+		fieldType := inputStructType.Field(i)
+		if fieldType.PkgPath != "" {
+			continue
+		}
+
+		keyBuff, keyErr := Encode(strings.ToLower(fieldType.Name))
+
+		if keyErr != nil {
+			return nil, keyErr
+		}
+
+		buff = append(buff, keyBuff...)
+
+		elementBuff, elemErr := Encode(inputStructValue.Field(i).Interface())
+
+		if elemErr != nil {
+			return nil, elemErr
 		}
 
 		buff = append(buff, elementBuff...)

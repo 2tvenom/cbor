@@ -46,11 +46,29 @@ var additionalLength = map[byte]byte{
 	additionalTypeIntUint64 : 8,
 }
 
-//exported decode func
-func Decode(byteBuff *[]byte) (interface {}, error) {
-	data, _, err := decode(*byteBuff)
-	return data, err
+type cborEncode struct {
+	buff *bytes.Buffer
 }
+
+func NewEncoder(buff *bytes.Buffer) (cborEncode){
+	return cborEncode{buff}
+}
+
+//data, _, err := decode(*byteBuff)
+
+func (encoder *cborEncode) Encode(value interface{}) (bool, error){
+	buff, err := encode(value)
+	if err != nil {
+		return false, err
+	}
+
+	encoder.buff.Reset()
+	encoder.buff.Write(buff)
+
+	return true, nil
+}
+
+
 
 //decode with offset
 func decode(buff []byte) (interface {}, int64, error) {
@@ -202,7 +220,7 @@ func unpack(byteBuff []byte, test interface{}) (error){
 	return err
 }
 
-func Encode(variable interface{}) ([]byte, error) {
+func encode(variable interface{}) ([]byte, error) {
 	if variable == nil {
 		return encodeNil()
 	}
@@ -294,7 +312,7 @@ func encodeArray(variable interface{}) ([]byte, error) {
 
 	//array slice encode
 	for i:=0; i < inputSlice.Len(); i++ {
-		elementBuff, err := Encode(inputSlice.Index(i).Interface())
+		elementBuff, err := encode(inputSlice.Index(i).Interface())
 
 		if err != nil {
 			return nil, err
@@ -342,7 +360,7 @@ func encodeStruct(variable interface{}) ([]byte, error) {
 			continue
 		}
 
-		keyBuff, keyErr := Encode(strings.ToLower(fieldType.Name))
+		keyBuff, keyErr := encode(strings.ToLower(fieldType.Name))
 
 		if keyErr != nil {
 			return nil, keyErr
@@ -350,7 +368,7 @@ func encodeStruct(variable interface{}) ([]byte, error) {
 
 		buff = append(buff, keyBuff...)
 
-		elementBuff, elemErr := Encode(inputStructValue.Field(i).Interface())
+		elementBuff, elemErr := encode(inputStructValue.Field(i).Interface())
 
 		if elemErr != nil {
 			return nil, elemErr
@@ -378,7 +396,7 @@ func encodeMap(variable interface{}) ([]byte, error) {
 
 	//map encode
 	for _, key := range inputSlice.MapKeys() {
-		keyBuff, keyErr := Encode(key.Interface())
+		keyBuff, keyErr := encode(key.Interface())
 
 		if keyErr != nil {
 			return nil, keyErr
@@ -386,7 +404,7 @@ func encodeMap(variable interface{}) ([]byte, error) {
 
 		buff = append(buff, keyBuff...)
 
-		elementBuff, elemErr := Encode(inputSlice.MapIndex(key).Interface())
+		elementBuff, elemErr := encode(inputSlice.MapIndex(key).Interface())
 
 		if elemErr != nil {
 			return nil, elemErr

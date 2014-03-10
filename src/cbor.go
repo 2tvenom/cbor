@@ -3,8 +3,7 @@ package main
 import (
 	"fmt"
 	"cbor"
-//	"io/ioutil"
-//	"bytes"
+	"bytes"
 )
 
 type Vector struct {
@@ -12,17 +11,16 @@ type Vector struct {
 }
 
 func main() {
-//	var buffTest bytes.Buffer
-//
-//	encoder := cbor.NewEncoder(&buffTest)
-//	encoder.Encode(Vector{1,2,3})
 	v := Vector{1,2,3}
-	buff, error := cbor.Encode(v)
 
-	if error != nil {
+	var buffTest bytes.Buffer
+	encoder := cbor.NewEncoder(&buffTest)
+	ok, error := encoder.Encode(v)
+
+	if !ok {
 		fmt.Errorf("Error decoding %s", error)
 	} else {
-		fmt.Printf("Variable Hex = % x\n", buff)
-		fmt.Printf("Variable = %v\n", buff)
+		fmt.Printf("Variable Hex = % x\n", buffTest.Bytes())
+		fmt.Printf("Variable = %v\n", buffTest.Bytes())
 	}
 }

@@ -306,6 +306,7 @@ func encodeArray(variable interface{}) ([]byte, error) {
 	return buff, nil
 }
 
+//ecnode struct
 func encodeStruct(variable interface{}) ([]byte, error) {
 	majorType := majorTypeMap
 
@@ -314,7 +315,21 @@ func encodeStruct(variable interface{}) ([]byte, error) {
 
 	length := inputStructValue.NumField()
 
-	buff, err := packNumber(majorType, uint64(length))
+	publicRange := 0
+
+	for i:=0; i<length; i++ {
+		fieldType := inputStructType.Field(i)
+		if fieldType.PkgPath != "" {
+			continue
+		}
+		publicRange++
+	}
+
+	if publicRange == 0 {
+		return nil, fmt.Errorf("Struct %v not have public fields", variable)
+	}
+
+	buff, err := packNumber(majorType, uint64(publicRange))
 
 	if err != nil {
 		return nil, err

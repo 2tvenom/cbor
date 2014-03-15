@@ -299,7 +299,7 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 				return true, fmt.Errorf("Float16 decode not support")
 			case additionalTypeFloat32:
 				var out float32
-				err := unpackFromBuff(encoder.buff, dataLength, &out)
+				err := unpack(buff, &out)
 
 				if err != nil {
 					return false, err
@@ -310,7 +310,7 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 				return true, nil
 			case additionalTypeFloat64:
 				var out float64
-				err := unpackFromBuff(encoder.buff, dataLength, &out)
+				err := unpack(buff, &out)
 
 				if err != nil {
 					return false, err
@@ -489,17 +489,6 @@ func decodeInt(headerAdditionInfo byte, buff []byte) (int, error) {
 	}
 
 	return number, nil
-}
-
-func unpackFromBuff(byteBuffSource *bytes.Buffer, length int, target interface{}) (error){
-	byteBuff := make([]byte, length)
-	_, err := byteBuffSource.Read(byteBuff)
-
-	if err != nil {
-		return err
-	}
-
-	return unpack(byteBuff, target)
 }
 
 func unpack(byteBuff []byte, target interface{}) (error){

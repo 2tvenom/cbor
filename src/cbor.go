@@ -11,7 +11,7 @@ type Vector struct {
 }
 
 func main() {
-	var v float32
+	var v float64
 
 	v = 12.3
 
@@ -27,7 +27,7 @@ func main() {
 	}
 	fmt.Printf("-----------------\n")
 
-	var vd float32
+	var vd float64
 
 	ok, err := encoder.Unmarshal(buffTest.Bytes(), &vd)
 

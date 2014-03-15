@@ -46,6 +46,28 @@ var additionalLength = map[byte]byte{
 	additionalTypeIntUint64 : 8,
 }
 
+var reflectToCbor = map[reflect.Kind][]byte{
+	reflect.Bool 	: []byte{majorTypeSimpleAndFloat},
+	reflect.Int  	: []byte{majorTypeInt, majorTypeUnsignedInt},
+	reflect.Float32 : []byte{majorTypeSimpleAndFloat},
+	reflect.Float64 : []byte{majorTypeSimpleAndFloat},
+	reflect.Array   : []byte{majorTypeArray},
+	reflect.Map     : []byte{majorTypeMap},
+	reflect.Slice   : []byte{majorTypeArray},
+	reflect.String  : []byte{majorTypeByteString, majorTypeUtf8String},
+	reflect.Struct  : []byte{majorTypeMap},
+}
+
+var typeLabel = map[byte]string {
+	majorTypeUnsignedInt : "Unsignet int",
+	majorTypeInt : "Int",
+	majorTypeByteString : "Byte string",
+	majorTypeUtf8String : "UTF-8 string",
+	majorTypeArray : "Array",
+	majorTypeMap : "Map",
+	majorTypeSimpleAndFloat : "Float",
+}
+
 type cborEncode struct {
 	buff *bytes.Buffer
 }
@@ -54,7 +76,7 @@ func NewEncoder(buff *bytes.Buffer) (cborEncode){
 	return cborEncode{buff}
 }
 
-func (encoder *cborEncode) Encode(value interface{}) (bool, error){
+func (encoder *cborEncode) Marshal(value interface{}) (bool, error){
 	encoder.buff.Reset()
 	ok, err := encoder.encodeValue(value)
 	if !ok {
@@ -92,141 +114,374 @@ func (encoder *cborEncode) encodeValue(variable interface{}) (bool, error) {
 	return true, nil
 }
 
-//decode with offset
-func decode(buff []byte) (interface {}, int64, error) {
-	if len(buff) == 0 {
-		return nil, -1, fmt.Errorf("Empty input byte array")
+
+func (encoder *cborEncode) Unmarshal(data []byte, v interface{}) (bool, error) {
+	if len(data) == 0 {
+		return false, fmt.Errorf("Empty input byte array")
 	}
 
-	majorType := buff[0] & additionalWipe
-	headerAdditionInfo := buff[0] & majorWipe
-	var dataOffset int64 = 1
-	if offset, ok := additionalLength[headerAdditionInfo]; ok {
-		dataOffset += int64(offset)
+	reflectedValue := reflect.ValueOf(v)
+
+	if reflectedValue.Kind() != reflect.Ptr {
+		return false, fmt.Errorf("Input value must be ptr")
+	}
+
+	encoder.buff.Reset()
+	_, err := encoder.buff.Write(data)
+
+	if err != nil {
+		return false, err
+	}
+
+	return encoder.decode(reflectedValue.Elem())
+}
+
+func checkReflectWithCbor(reflecType reflect.Type, cborType byte) (bool){
+	if value, ok := reflectToCbor[reflecType.Kind()]; ok {
+		for _, v := range value {
+			if cborType == v {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
+	firstElem, err := encoder.buff.ReadByte()
+
+	if err != nil {
+		return false, err
+	}
+
+	majorType := firstElem & additionalWipe
+
+	ok := checkReflectWithCbor(v.Type(), majorType)
+
+	if !ok {
+		return false, fmt.Errorf("Can't convert %s to %s", v, typeLabel[majorType])
+	}
+
+	headerAdditionInfo := firstElem & majorWipe
+
+	var dataLength int = 0
+	if length, ok := additionalLength[headerAdditionInfo]; ok {
+		dataLength += int(length)
+	}
+
+	buff := make([]byte, dataLength)
+	_, err = encoder.buff.Read(buff)
+
+	if err != nil {
+		return false, err
 	}
 
 	switch majorType {
 	case majorTypeUnsignedInt, majorTypeInt:
-		number, err := decodeInt(headerAdditionInfo,buff[1:dataOffset])
+		number, err := decodeInt(headerAdditionInfo,buff)
 
 		if err != nil {
-			return nil, -1, err
+			return false, err
 		}
 
 		if majorType == majorTypeInt {
-			return -(number + 1), dataOffset, nil
+			number = -(number + 1)
 		}
 
-		return number, dataOffset, nil
-	case majorTypeByteString, majorTypeUtf8String:
-		length, err := decodeInt(headerAdditionInfo, buff[1:dataOffset])
+		v.Set(reflect.ValueOf(number))
 
-		if err != nil {
-			return nil, -1, err
-		}
-		newOffset := int64(dataOffset) + length
-		return string(buff[dataOffset: newOffset]), newOffset, nil
-	case majorTypeArray:
-		array_cap, err := decodeInt(headerAdditionInfo, buff[1:dataOffset])
+		return true, nil
+		case majorTypeByteString, majorTypeUtf8String:
+			length, err := decodeInt(headerAdditionInfo, buff)
 
-		if err != nil {
-			return nil, -1, err
-		}
-
-		var out []interface {}
-
-		offset := dataOffset
-		for int(array_cap) > len(out) {
-			data, newOffset, err1 := decode(buff[offset:])
-			if err1 != nil {
-				return nil, -1, err
+			if err != nil {
+				return false, err
 			}
 
-			out = append(out, data)
-			offset += newOffset
-		}
+			stringBuff := make([]byte, length)
+			_, err = encoder.buff.Read(stringBuff)
 
-		return out, offset, nil
-	case majorTypeMap:
-		array_cap, err := decodeInt(headerAdditionInfo, buff[1:dataOffset])
-
-		if err != nil {
-			return nil, -1, err
-		}
-
-		out := map[interface{}]interface {}{}
-
-		offset := dataOffset
-		for int(array_cap) > len(out) {
-			key, newOffset, key_err := decode(buff[offset:])
-			if key_err != nil {
-				return nil, -1, key_err
+			if err != nil {
+				return false, err
 			}
 
-			offset += newOffset
+			v.Set(reflect.ValueOf(string(stringBuff)))
 
-			value, newOffset, value_err := decode(buff[offset:])
-			if value_err != nil {
-				return nil, -1, value_err
+			return true, nil
+		case majorTypeArray:
+			array_cap, err := decodeInt(headerAdditionInfo, buff)
+
+			if err != nil {
+				return false, err
 			}
 
-			out[key] = value
+			v.Set(reflect.MakeSlice(v.Type(), array_cap, array_cap))
 
-			offset += newOffset
-		}
+			for i:=0; i<array_cap; i++ {
+				ok, err := encoder.decode(v.Index(i))
+				if !ok {
+					return false, err
+				}
+			}
 
-		return out, offset, nil
-	case majorTypeTags:
-		return nil, -1, fmt.Errorf("Tags not support")
-	case majorTypeSimpleAndFloat:
-		switch headerAdditionInfo {
-		case additionalTypeIntFalse:
-			return false, dataOffset, nil
-		case additionalTypeIntTrue:
-			return true, dataOffset, nil
-		case additionalTypeIntNull:
-			return nil, dataOffset, nil
-		case additionalTypeFloat16:
-			return nil, -1, fmt.Errorf("Float16 decode not support")
-		case additionalTypeFloat32:
-			var out float32
-			err := unpack(buff[1:dataOffset], &out)
-			return out, dataOffset, err
-		case additionalTypeFloat64:
-			var out float64
-			err := unpack(buff[1:dataOffset], &out)
-			return out, dataOffset, err
-		}
+			return true, nil
+		case majorTypeMap:
+			map_length, err := decodeInt(headerAdditionInfo, buff)
+
+			if err != nil {
+				return false, err
+			}
+
+			if v.Kind() == reflect.Map {
+				v.Set(reflect.MakeMap(v.Type()))
+
+				for i:=0; i<map_length; i++ {
+					key := reflect.New(v.Type().Key())
+
+					ok, err := encoder.decode(key.Elem())
+					if !ok {
+						return false, err
+					}
+
+					value := reflect.New(v.Type().Elem())
+
+					ok, err = encoder.decode(value.Elem())
+					if !ok {
+						return false, err
+					}
+
+					v.SetMapIndex(key.Elem(), value.Elem())
+				}
+			} else if v.Kind() == reflect.Struct {
+				v.Set(reflect.New(v.Type()).Elem())
+
+				structFieldList := []string{}
+
+				for i:=0; i< v.NumField(); i++ {
+					structFieldList = append(structFieldList, v.Type().Field(i).Name)
+				}
+
+				for i:=0; i<map_length; i++ {
+					var key string
+
+					ok, err := encoder.decode(reflect.ValueOf(&key).Elem())
+					if !ok {
+						return false, err
+					}
+
+					ok, fieldName := lookupField(key, structFieldList)
+
+					if !ok {
+						return false, fmt.Errorf("Field %s not strut %v", key, v)
+					}
+
+					ok, err = encoder.decode(v.FieldByName(fieldName))
+
+					if !ok {
+						return false, err
+					}
+				}
+			}
+			return true, nil
+		case majorTypeTags:
+			return false, fmt.Errorf("Tags not support")
+		case majorTypeSimpleAndFloat:
+			switch headerAdditionInfo {
+			case additionalTypeIntFalse:
+				v.Set(reflect.ValueOf(false))
+				return true, nil
+			case additionalTypeIntTrue:
+				v.Set(reflect.ValueOf(true))
+				return true, nil
+			case additionalTypeIntNull:
+				return true, nil
+			case additionalTypeFloat16:
+				return true, fmt.Errorf("Float16 decode not support")
+			case additionalTypeFloat32:
+				var out float32
+				err := unpackFromBuff(encoder.buff, dataLength, &out)
+
+				if err != nil {
+					return false, err
+				}
+
+				v.Set(reflect.ValueOf(&out).Elem())
+
+				return true, nil
+			case additionalTypeFloat64:
+				var out float64
+				err := unpackFromBuff(encoder.buff, dataLength, &out)
+
+				if err != nil {
+					return false, err
+				}
+
+				v.Set(reflect.ValueOf(&out).Elem())
+
+				return true, nil
+			}
 	}
 
-	return nil, -1, nil
+	return true, nil
 }
+
+func lookupField(field string, fieldList []string) (bool, string) {
+	field = strings.ToLower(field)
+
+	for _, currentField := range fieldList {
+		if field != strings.ToLower(currentField) {
+			continue
+		}
+		return true, currentField
+	}
+	return false, ""
+}
+
+//decode with offset
+//func (encoder *cborEncode)_decode(v interface{}) (interface {}, error) {
+//	firstElem, err := encoder.buff.ReadByte()
+//
+//	if err != nil {
+//		return false, err
+//	}
+//
+//	majorType := firstElem & additionalWipe
+//	headerAdditionInfo := firstElem & majorWipe
+//	var dataOffset int64 = 1
+//	if offset, ok := additionalLength[headerAdditionInfo]; ok {
+//		dataOffset += int64(offset)
+//	}
+//
+//	switch majorType {
+//	case majorTypeUnsignedInt, majorTypeInt:
+//		buff := make([]byte, dataOffset)
+//
+//		_, err := encoder.buff.Read(buff)
+//
+//		if err != nil {
+//			return false, err
+//		}
+//
+//		number, err := decodeInt(headerAdditionInfo,buff)
+//
+//		if err != nil {
+//			return false, err
+//		}
+//
+//		if majorType == majorTypeInt {
+//			return -(number + 1), nil
+//		}
+//
+//		return number, nil
+//	case majorTypeByteString, majorTypeUtf8String:
+//		length, err := decodeInt(headerAdditionInfo, buff[1:dataOffset])
+//
+//		if err != nil {
+//			return nil, -1, err
+//		}
+//		newOffset := int64(dataOffset) + length
+//		return string(buff[dataOffset: newOffset]), newOffset, nil
+//	case majorTypeArray:
+//		array_cap, err := decodeInt(headerAdditionInfo, buff[1:dataOffset])
+//
+//		if err != nil {
+//			return nil, -1, err
+//		}
+//
+//		var out []interface {}
+//
+//		offset := dataOffset
+//		for int(array_cap) > len(out) {
+//			data, newOffset, err1 := decode(buff[offset:])
+//			if err1 != nil {
+//				return nil, -1, err
+//			}
+//
+//			out = append(out, data)
+//			offset += newOffset
+//		}
+//
+//		return out, offset, nil
+//	case majorTypeMap:
+//		array_cap, err := decodeInt(headerAdditionInfo, buff[1:dataOffset])
+//
+//		if err != nil {
+//			return nil, -1, err
+//		}
+//
+//		out := map[interface{}]interface {}{}
+//
+//		offset := dataOffset
+//		for int(array_cap) > len(out) {
+//			key, newOffset, key_err := decode(buff[offset:])
+//			if key_err != nil {
+//				return nil, -1, key_err
+//			}
+//
+//			offset += newOffset
+//
+//			value, newOffset, value_err := decode(buff[offset:])
+//			if value_err != nil {
+//				return nil, -1, value_err
+//			}
+//
+//			out[key] = value
+//
+//			offset += newOffset
+//		}
+//
+//		return out, offset, nil
+//	case majorTypeTags:
+//		return nil, -1, fmt.Errorf("Tags not support")
+//	case majorTypeSimpleAndFloat:
+//		switch headerAdditionInfo {
+//		case additionalTypeIntFalse:
+//			return false, dataOffset, nil
+//		case additionalTypeIntTrue:
+//			return true, dataOffset, nil
+//		case additionalTypeIntNull:
+//			return nil, dataOffset, nil
+//		case additionalTypeFloat16:
+//			return nil, -1, fmt.Errorf("Float16 decode not support")
+//		case additionalTypeFloat32:
+//			var out float32
+//			err := unpack(buff[1:dataOffset], &out)
+//			return out, dataOffset, err
+//		case additionalTypeFloat64:
+//			var out float64
+//			err := unpack(buff[1:dataOffset], &out)
+//			return out, dataOffset, err
+//		}
+//	}
+//
+//	return nil, -1, nil
+//}
 
 
 //decode int
-func decodeInt(headerAdditionInfo byte, buff []byte) (int64, error) {
+func decodeInt(headerAdditionInfo byte, buff []byte) (int, error) {
 	if headerAdditionInfo <= additionalMax {
-		return int64(headerAdditionInfo), nil
+		return int(headerAdditionInfo), nil
 	}
 
-	var number int64
+	var number int
 	var err error
 
 	switch headerAdditionInfo {
 	case additionalTypeIntUint8:
-		return int64(buff[0]), nil
+		return int(buff[0]), nil
 	case additionalTypeIntUint16:
 		var out uint16
 		err = unpack(buff, &out)
-		number = int64(out)
+		number = int(out)
 	case additionalTypeIntUint32:
 		var out uint32
 		err = unpack(buff, &out)
-		number = int64(out)
+		number = int(out)
 	default:
 		var out uint64
 		err = unpack(buff, &out)
-		number = int64(out)
+		number = int(out)
 	}
 
 	if err != nil {
@@ -236,9 +491,20 @@ func decodeInt(headerAdditionInfo byte, buff []byte) (int64, error) {
 	return number, nil
 }
 
-func unpack(byteBuff []byte, test interface{}) (error){
+func unpackFromBuff(byteBuffSource *bytes.Buffer, length int, target interface{}) (error){
+	byteBuff := make([]byte, length)
+	_, err := byteBuffSource.Read(byteBuff)
+
+	if err != nil {
+		return err
+	}
+
+	return unpack(byteBuff, target)
+}
+
+func unpack(byteBuff []byte, target interface{}) (error){
 	buf := bytes.NewReader(byteBuff)
-	err := binary.Read(buf, binary.BigEndian, test)
+	err := binary.Read(buf, binary.BigEndian, target)
 	return err
 }
 
@@ -301,9 +567,9 @@ func (encoder *cborEncode) encodeNil() (bool, error){
 	encode
  */
 func (encoder *cborEncode)encodeBool(variable bool) (bool, error){
-	varType := additionalTypeIntTrue
+	varType := additionalTypeIntFalse
 	if variable {
-		varType = additionalTypeIntFalse
+		varType = additionalTypeIntTrue
 	}
 
 	buff, err := packInitByte(majorTypeSimpleAndFloat, varType)

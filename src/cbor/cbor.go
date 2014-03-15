@@ -78,7 +78,8 @@ func NewEncoder(buff *bytes.Buffer) (cborEncode){
 
 func (encoder *cborEncode) Marshal(value interface{}) (bool, error){
 	encoder.buff.Reset()
-	ok, err := encoder.encodeValue(value)
+
+		ok, err := encoder.encodeValue(value)
 	if !ok {
 		return false, err
 	}
@@ -87,12 +88,13 @@ func (encoder *cborEncode) Marshal(value interface{}) (bool, error){
 }
 
 func (encoder *cborEncode) encodeValue(variable interface{}) (bool, error) {
-
 	if variable == nil {
 		return encoder.encodeNil()
 	}
 
 	switch reflect.TypeOf(variable).Kind() {
+	case reflect.Ptr:
+		return encoder.encodeValue(reflect.ValueOf(variable).Elem().Interface())
 	case reflect.Int:
 		return encoder.encodeNumber(variable.(int))
 	case reflect.String:

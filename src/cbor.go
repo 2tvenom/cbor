@@ -8,12 +8,28 @@ import (
 
 type Vector struct {
 	X, Y, Z int
+	Range []Range
+	Label string
+}
+
+type Range struct {
+	Length int
+	Align float32
 }
 
 func main() {
-	var v float64
-
-	v = 12.3
+	v := &Vector {
+		X: 10,
+		Y: 15,
+		Z: 100,
+		Range: []Range{
+			Range {1,10},
+			Range {223432423,30},
+			Range {3,41.5},
+			Range {174,55555.2},
+		},
+		Label: "HoHoHo",
+	}
 
 	var buffTest bytes.Buffer
 	encoder := cbor.NewEncoder(&buffTest)
@@ -27,7 +43,7 @@ func main() {
 	}
 	fmt.Printf("-----------------\n")
 
-	var vd float64
+	var vd Vector
 
 	ok, err := encoder.Unmarshal(buffTest.Bytes(), &vd)
 

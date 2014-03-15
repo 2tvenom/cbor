@@ -54,21 +54,43 @@ func NewEncoder(buff *bytes.Buffer) (cborEncode){
 	return cborEncode{buff}
 }
 
-//data, _, err := decode(*byteBuff)
-
 func (encoder *cborEncode) Encode(value interface{}) (bool, error){
-	buff, err := encode(value)
-	if err != nil {
+	encoder.buff.Reset()
+	ok, err := encoder.encodeValue(value)
+	if !ok {
 		return false, err
 	}
-
-	encoder.buff.Reset()
-	encoder.buff.Write(buff)
 
 	return true, nil
 }
 
+func (encoder *cborEncode) encodeValue(variable interface{}) (bool, error) {
 
+	if variable == nil {
+		return encoder.encodeNil()
+	}
+
+	switch reflect.TypeOf(variable).Kind() {
+	case reflect.Int:
+		return encoder.encodeNumber(variable.(int))
+	case reflect.String:
+		return encoder.encodeString(variable.(string))
+	case reflect.Array, reflect.Slice:
+		return encoder.encodeArray(variable)
+	case reflect.Map:
+		return encoder.encodeMap(variable)
+	case reflect.Struct:
+		return encoder.encodeStruct(variable)
+	case reflect.Bool:
+		return encoder.encodeBool(variable.(bool))
+	case reflect.Float32:
+		return encoder.encodeFloat(variable.(float32), additionalTypeFloat32)
+	case reflect.Float64:
+		return encoder.encodeFloat(variable.(float64), additionalTypeFloat64)
+	}
+
+	return true, nil
+}
 
 //decode with offset
 func decode(buff []byte) (interface {}, int64, error) {
@@ -220,43 +242,22 @@ func unpack(byteBuff []byte, test interface{}) (error){
 	return err
 }
 
-func encode(variable interface{}) ([]byte, error) {
-	if variable == nil {
-		return encodeNil()
-	}
-
-	switch reflect.TypeOf(variable).Kind() {
-	case reflect.Int:
-		return encodeNumber(variable.(int))
-	case reflect.String:
-		return encodeString(variable.(string))
-	case reflect.Array, reflect.Slice:
-		return encodeArray(variable)
-	case reflect.Map:
-		return encodeMap(variable)
-	case reflect.Struct:
-		return encodeStruct(variable)
-	case reflect.Bool:
-		return encodeBool(variable.(bool))
-	case reflect.Float32:
-		return encodeFloat(variable.(float32), additionalTypeFloat32)
-	case reflect.Float64:
-		return encodeFloat(variable.(float64), additionalTypeFloat64)
-	}
-
-	return nil, nil
-}
-
 /**
 	Encoding float32/float64
  */
-func encodeFloat(number interface{}, additionalFloatType byte)([]byte, error){
+func (encoder *cborEncode)encodeFloat(number interface{}, additionalFloatType byte)(bool, error){
 	majorType := majorTypeSimpleAndFloat
 
 	initByte, err := packInitByte(majorType, additionalFloatType)
 
 	if err != nil {
-		return []byte{}, err
+		return false, err
+	}
+
+	_, err = encoder.buff.Write(initByte)
+
+	if err != nil {
+		return false, err
 	}
 
 	var packedInfo []byte
@@ -272,34 +273,58 @@ func encodeFloat(number interface{}, additionalFloatType byte)([]byte, error){
 	}
 
 	if errPack != nil {
-		return nil, errPack
+		return false, errPack
 	}
 
-	return append(initByte, packedInfo...), nil
+	_, err = encoder.buff.Write(packedInfo)
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 /**
 	encoding nil
  */
-func encodeNil() ([]byte, error){
-	return packInitByte(majorTypeSimpleAndFloat, additionalTypeIntNull)
+func (encoder *cborEncode) encodeNil() (bool, error){
+	byteArr, err := packInitByte(majorTypeSimpleAndFloat, additionalTypeIntNull)
+	if err != nil {
+		return false, err
+	}
+	encoder.buff.Write(byteArr)
+	return true, nil
 }
 
 /**
 	encode
  */
-func encodeBool(variable bool) ([]byte, error){
+func (encoder *cborEncode)encodeBool(variable bool) (bool, error){
+	varType := additionalTypeIntTrue
 	if variable {
-		return packInitByte(majorTypeSimpleAndFloat, additionalTypeIntTrue)
+		varType = additionalTypeIntFalse
 	}
 
-	return packInitByte(majorTypeSimpleAndFloat, additionalTypeIntFalse)
+	buff, err := packInitByte(majorTypeSimpleAndFloat, varType)
+
+	if err != nil {
+		return false, err
+	}
+
+	_, err = encoder.buff.Write(buff)
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 /**
 	Encode array to CBOR binary string
  */
-func encodeArray(variable interface{}) ([]byte, error) {
+func (encoder *cborEncode)encodeArray(variable interface{}) (bool, error) {
 	majorType := majorTypeArray
 	inputSlice := reflect.ValueOf(variable)
 	length := inputSlice.Len()
@@ -307,25 +332,27 @@ func encodeArray(variable interface{}) ([]byte, error) {
 	buff, err := packNumber(majorType, uint64(length))
 
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
+	_, err = encoder.buff.Write(buff)
+
+	if err != nil {
+		return false, err
+	}
 	//array slice encode
 	for i:=0; i < inputSlice.Len(); i++ {
-		elementBuff, err := encode(inputSlice.Index(i).Interface())
-
-		if err != nil {
-			return nil, err
+		ok, err := encoder.encodeValue(inputSlice.Index(i).Interface())
+		if !ok {
+			return false, err
 		}
-
-		buff = append(buff, elementBuff...)
 	}
 
-	return buff, nil
+	return true, nil
 }
 
 //ecnode struct
-func encodeStruct(variable interface{}) ([]byte, error) {
+func (encoder *cborEncode)encodeStruct(variable interface{}) (bool, error) {
 	majorType := majorTypeMap
 
 	inputStructValue:= reflect.ValueOf(variable)
@@ -344,13 +371,19 @@ func encodeStruct(variable interface{}) ([]byte, error) {
 	}
 
 	if publicRange == 0 {
-		return nil, fmt.Errorf("Struct %v not have public fields", variable)
+		return false, fmt.Errorf("Struct%v not have public fields", variable)
 	}
 
 	buff, err := packNumber(majorType, uint64(publicRange))
 
 	if err != nil {
-		return nil, err
+		return false, err
+	}
+
+	_, err = encoder.buff.Write(buff)
+
+	if err != nil {
+		return  false, err
 	}
 
 	//struct encode
@@ -360,30 +393,26 @@ func encodeStruct(variable interface{}) ([]byte, error) {
 			continue
 		}
 
-		keyBuff, keyErr := encode(strings.ToLower(fieldType.Name))
+		keyOk, keyErr := encoder.encodeValue(strings.ToLower(fieldType.Name))
 
-		if keyErr != nil {
-			return nil, keyErr
+		if !keyOk {
+			return false, keyErr
 		}
 
-		buff = append(buff, keyBuff...)
+		elementOk, elemErr := encoder.encodeValue(inputStructValue.Field(i).Interface())
 
-		elementBuff, elemErr := encode(inputStructValue.Field(i).Interface())
-
-		if elemErr != nil {
-			return nil, elemErr
+		if !elementOk {
+			return false, elemErr
 		}
-
-		buff = append(buff, elementBuff...)
 	}
 
-	return buff, nil
+	return true, nil
 }
 
 /**
 	Encode map to CBOR binary string
  */
-func encodeMap(variable interface{}) ([]byte, error) {
+func (encoder *cborEncode)encodeMap(variable interface{}) (bool, error) {
 	majorType := majorTypeMap
 	inputSlice := reflect.ValueOf(variable)
 	length := inputSlice.Len()
@@ -391,35 +420,36 @@ func encodeMap(variable interface{}) ([]byte, error) {
 	buff, err := packNumber(majorType, uint64(length))
 
 	if err != nil {
-		return nil, err
+		return false, err
+	}
+
+	_, err = encoder.buff.Write(buff)
+	if err != nil {
+		return false, err
 	}
 
 	//map encode
 	for _, key := range inputSlice.MapKeys() {
-		keyBuff, keyErr := encode(key.Interface())
+		ok, keyErr := encoder.encodeValue(key.Interface())
 
-		if keyErr != nil {
-			return nil, keyErr
+		if !ok {
+			return false, keyErr
 		}
 
-		buff = append(buff, keyBuff...)
+		ok, elemErr := encoder.encodeValue(inputSlice.MapIndex(key).Interface())
 
-		elementBuff, elemErr := encode(inputSlice.MapIndex(key).Interface())
-
-		if elemErr != nil {
-			return nil, elemErr
+		if !ok {
+			return false, elemErr
 		}
-
-		buff = append(buff, elementBuff...)
 	}
 
-	return buff, nil
+	return true, nil
 }
 
 /**
 	Encode string to CBOR binary string
  */
-func encodeString(variable string) ([]byte, error) {
+func (encoder *cborEncode)encodeString(variable string) (bool, error) {
 	byteBuf := []byte(variable)
 
 	majorType := majorTypeUtf8String
@@ -431,16 +461,28 @@ func encodeString(variable string) ([]byte, error) {
 	initByte, err := packNumber(majorType, uint64(len(byteBuf)))
 
 	if err != nil {
-		return []byte{}, err
+		return false, err
 	}
 
-	return append(initByte, byteBuf...), nil
+	_, err = encoder.buff.Write(initByte)
+
+	if err != nil {
+		return false, err
+	}
+
+	_, err = encoder.buff.Write(byteBuf)
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 /**
 	Encode integer to CBOR binary string
  */
-func encodeNumber(variable int) ([]byte, error) {
+func (encoder *cborEncode)encodeNumber(variable int) (bool, error) {
 	var majorType = majorTypeUnsignedInt
 
 	var unsignedVariable uint64
@@ -453,7 +495,17 @@ func encodeNumber(variable int) ([]byte, error) {
 	}
 
 	byteArr, err := packNumber(majorType, unsignedVariable)
-	return byteArr, err
+	if err != nil {
+		return false, err
+	}
+
+	_, err = encoder.buff.Write(byteArr)
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, err
 }
 
 /**

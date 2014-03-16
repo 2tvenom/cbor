@@ -290,9 +290,15 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 		case majorTypeSimpleAndFloat:
 			switch headerAdditionInfo {
 			case additionalTypeIntFalse:
+				if v.Kind() != reflect.Bool {
+					return false, fmt.Errorf("Can convert %s to bool", v.Type())
+				}
 				v.Set(reflect.ValueOf(false))
 				return true, nil
 			case additionalTypeIntTrue:
+				if v.Kind() != reflect.Bool {
+					return false, fmt.Errorf("Can convert %s to bool", v.Type())
+				}
 				v.Set(reflect.ValueOf(true))
 				return true, nil
 			case additionalTypeIntNull:
@@ -300,6 +306,9 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 			case additionalTypeFloat16:
 				return true, fmt.Errorf("Float16 decode not support")
 			case additionalTypeFloat32:
+				if v.Kind() != reflect.Float32 {
+					return false, fmt.Errorf("Can convert %s to float32", v.Type())
+				}
 				var out float32
 				err := unpack(buff, &out)
 
@@ -311,7 +320,11 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 
 				return true, nil
 			case additionalTypeFloat64:
+				if v.Kind() != reflect.Float64 {
+					return false, fmt.Errorf("Can convert %s to float64", v.Type())
+				}
 				var out float64
+
 				err := unpack(buff, &out)
 
 				if err != nil {

@@ -316,22 +316,32 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 					return false, err
 				}
 
-				v.Set(reflect.ValueOf(&out).Elem())
+				if v.Kind() == reflect.Float32 {
+					v.Set(reflect.ValueOf(&out).Elem())
+				} else if v.Kind() == reflect.Float64 {
+					out64 := float64(out)
+					v.Set(reflect.ValueOf(&out64).Elem())
+				} else {
+					return false, fmt.Errorf("Can convert %s to float32", v.Type())
+				}
 
 				return true, nil
 			case additionalTypeFloat64:
-				if v.Kind() != reflect.Float64 {
-					return false, fmt.Errorf("Can convert %s to float64", v.Type())
-				}
 				var out float64
-
 				err := unpack(buff, &out)
 
 				if err != nil {
 					return false, err
 				}
 
-				v.Set(reflect.ValueOf(&out).Elem())
+				if v.Kind() == reflect.Float64 {
+					v.Set(reflect.ValueOf(&out).Elem())
+				} else if v.Kind() == reflect.Float32 {
+					out32 := float32(out)
+					v.Set(reflect.ValueOf(&out32).Elem())
+				} else {
+					return false, fmt.Errorf("Can convert %s to float64", v.Type())
+				}
 
 				return true, nil
 			}

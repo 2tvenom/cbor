@@ -1,3 +1,14 @@
+#CBOR encoder for Go
+--------
+Decoder/encoder from Go data to CBOR binary string. This code has been developed and maintained by Ven at March 2014.
+
+CBOR is an object representation format defined by the [IETF](http://ietf.org).
+The [specification](http://tools.ietf.org/html/rfc7049)
+has recently been approved as an IETF Standards-Track specification
+and has been published as RFC 7049.
+
+## Usage
+```go
 package main
 
 import (
@@ -44,8 +55,8 @@ func main() {
 	}
 	fmt.Printf("-----------------\n")
 
+	//unmarshal binary string to new struct
 	var vd Vector
-
 	ok, err := encoder.Unmarshal(buffTest.Bytes(), &vd)
 
 	if !ok {
@@ -55,3 +66,15 @@ func main() {
 	//output
 	fmt.Printf("%v", vd)
 }
+```
+
+## Compatibility
+
+Checked with [PHP extension](https://github.com/2tvenom/CBOREncode) in encode and decode
+
+## Known issues
+
+- Not support tags. 6 major type *(in future)*
+- Not support 16  floats encoding
+- Not decode nil (null) vars
+- Encode does't support indefinite-length values.

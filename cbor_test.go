@@ -5,7 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/sharpner/cbor"
+	"github.com/2tvenom/cbor"
 )
 
 var _ = Describe("Cbor", func() {

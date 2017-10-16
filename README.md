@@ -1,5 +1,5 @@
-#CBOR encoder for Go
---------
+# CBOR encoder for Go
+
 Decoder/encoder from Go data to CBOR binary string. This code has been developed and maintained by Ven at March 2014.
 
 CBOR is an object representation format defined by the [IETF](http://ietf.org).

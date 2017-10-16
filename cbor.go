@@ -1,85 +1,86 @@
 package cbor
 
 import (
-	"fmt"
-	"encoding/binary"
 	"bytes"
-	"unicode/utf8"
+	"encoding/binary"
+	"fmt"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
-	majorOffset = 5
-	additionalWipe = 7 << majorOffset
-	majorWipe = 31
-	additionalMax = 23
-	additionalTypeIntFalse byte = 20
-	additionalTypeIntTrue byte = 21
-	additionalTypeIntNull byte = 22
+	majorOffset                     = 5
+	additionalWipe                  = 7 << majorOffset
+	majorWipe                       = 31
+	additionalMax                   = 23
+	additionalTypeIntFalse     byte = 20
+	additionalTypeIntTrue      byte = 21
+	additionalTypeIntNull      byte = 22
 	additionalTypeIntUndefined byte = 23
-	additionalTypeIntUint8 byte = 24
-	additionalTypeIntUint16 byte = 25
-	additionalTypeIntUint32 byte = 26
-	additionalTypeIntUint64 byte = 27
-	additionalTypeFloat16 byte = 25
-	additionalTypeFloat32 byte = 26
-	additionalTypeFloat64 byte = 27
-	additionalTypeBreak byte = 31
+	additionalTypeIntUint8     byte = 24
+	additionalTypeIntUint16    byte = 25
+	additionalTypeIntUint32    byte = 26
+	additionalTypeIntUint64    byte = 27
+	additionalTypeFloat16      byte = 25
+	additionalTypeFloat32      byte = 26
+	additionalTypeFloat64      byte = 27
+	additionalTypeBreak        byte = 31
 )
 
 const (
-	majorTypeUnsignedInt byte = iota << majorOffset
-	majorTypeInt
-	majorTypeByteString
-	majorTypeUtf8String
-	majorTypeArray
-	majorTypeMap
-	majorTypeTags
-	majorTypeSimpleAndFloat
+	majorTypeUnsignedInt    byte = iota << majorOffset // Major type 0
+	majorTypeInt                                       // Major type 1
+	majorTypeByteString                                // Major type 2
+	majorTypeUtf8String                                // Major type 3
+	majorTypeArray                                     // Major type 4
+	majorTypeMap                                       // Major type 5
+	majorTypeTags                                      // Major type 6
+	majorTypeSimpleAndFloat                            // Major type 7
 )
 
 var additionalLength = map[byte]byte{
-	additionalTypeIntUint8 : 1,
-	additionalTypeIntUint16 : 2,
-	additionalTypeIntUint32 : 4,
-	additionalTypeIntUint64 : 8,
+	additionalTypeIntUint8:  1,
+	additionalTypeIntUint16: 2,
+	additionalTypeIntUint32: 4,
+	additionalTypeIntUint64: 8,
 }
 
 var reflectToCbor = map[reflect.Kind][]byte{
-	reflect.Bool 	: []byte{majorTypeSimpleAndFloat},
-	reflect.Int  	: []byte{majorTypeInt, majorTypeUnsignedInt},
-	reflect.Float32 : []byte{majorTypeSimpleAndFloat},
-	reflect.Float64 : []byte{majorTypeSimpleAndFloat},
-	reflect.Array   : []byte{majorTypeArray},
-	reflect.Map     : []byte{majorTypeMap},
-	reflect.Slice   : []byte{majorTypeArray},
-	reflect.String  : []byte{majorTypeByteString, majorTypeUtf8String},
-	reflect.Struct  : []byte{majorTypeMap},
+	reflect.Bool:    []byte{majorTypeSimpleAndFloat},
+	reflect.Int:     []byte{majorTypeInt, majorTypeUnsignedInt},
+	reflect.Float32: []byte{majorTypeSimpleAndFloat},
+	reflect.Float64: []byte{majorTypeSimpleAndFloat},
+	reflect.Array:   []byte{majorTypeArray},
+	reflect.Map:     []byte{majorTypeMap},
+	reflect.Slice:   []byte{majorTypeArray},
+	reflect.String:  []byte{majorTypeByteString, majorTypeUtf8String},
+	reflect.Struct:  []byte{majorTypeMap},
 }
 
-var typeLabel = map[byte]string {
-	majorTypeUnsignedInt : "Unsignet int",
-	majorTypeInt : "Int",
-	majorTypeByteString : "Byte string",
-	majorTypeUtf8String : "UTF-8 string",
-	majorTypeArray : "Array",
-	majorTypeMap : "Map",
-	majorTypeSimpleAndFloat : "Float",
+var typeLabel = map[byte]string{
+	majorTypeUnsignedInt:    "Unsignet int",
+	majorTypeInt:            "Int",
+	majorTypeByteString:     "Byte string",
+	majorTypeUtf8String:     "UTF-8 string",
+	majorTypeArray:          "Array",
+	majorTypeMap:            "Map",
+	majorTypeSimpleAndFloat: "Float",
 }
 
 type cborEncode struct {
 	buff *bytes.Buffer
 }
 
-func NewEncoder(buff *bytes.Buffer) (cborEncode){
+// NewEncoder creates new encoder object
+func NewEncoder(buff *bytes.Buffer) cborEncode {
 	return cborEncode{buff}
 }
 
-func (encoder *cborEncode) Marshal(value interface{}) (bool, error){
+func (encoder *cborEncode) Marshal(value interface{}) (bool, error) {
 	encoder.buff.Reset()
 
-		ok, err := encoder.encodeValue(value)
+	ok, err := encoder.encodeValue(value)
 	if !ok {
 		return false, err
 	}
@@ -116,7 +117,6 @@ func (encoder *cborEncode) encodeValue(variable interface{}) (bool, error) {
 	return true, nil
 }
 
-
 func (encoder *cborEncode) Unmarshal(data []byte, v interface{}) (bool, error) {
 	if len(data) == 0 {
 		return false, fmt.Errorf("Empty input byte array")
@@ -138,7 +138,7 @@ func (encoder *cborEncode) Unmarshal(data []byte, v interface{}) (bool, error) {
 	return encoder.decode(reflectedValue.Elem())
 }
 
-func checkReflectWithCbor(reflecType reflect.Type, cborType byte) (bool){
+func checkReflectWithCbor(reflecType reflect.Type, cborType byte) bool {
 	if value, ok := reflectToCbor[reflecType.Kind()]; ok {
 		for _, v := range value {
 			if cborType == v {
@@ -166,7 +166,7 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 
 	headerAdditionInfo := firstElem & majorWipe
 
-	var dataLength int = 0
+	var dataLength int
 	if length, ok := additionalLength[headerAdditionInfo]; ok {
 		dataLength += int(length)
 	}
@@ -180,7 +180,7 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 
 	switch majorType {
 	case majorTypeUnsignedInt, majorTypeInt:
-		number, err := decodeInt(headerAdditionInfo,buff)
+		number, err := decodeInt(headerAdditionInfo, buff)
 
 		if err != nil {
 			return false, err
@@ -193,158 +193,158 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 		v.Set(reflect.ValueOf(number))
 
 		return true, nil
-		case majorTypeByteString, majorTypeUtf8String:
-			length, err := decodeInt(headerAdditionInfo, buff)
+	case majorTypeByteString, majorTypeUtf8String:
+		length, err := decodeInt(headerAdditionInfo, buff)
 
-			if err != nil {
+		if err != nil {
+			return false, err
+		}
+
+		stringBuff := make([]byte, length)
+		_, err = encoder.buff.Read(stringBuff)
+
+		if err != nil {
+			return false, err
+		}
+
+		v.Set(reflect.ValueOf(string(stringBuff)))
+
+		return true, nil
+	case majorTypeArray:
+		array_cap, err := decodeInt(headerAdditionInfo, buff)
+
+		if err != nil {
+			return false, err
+		}
+
+		v.Set(reflect.MakeSlice(v.Type(), array_cap, array_cap))
+
+		for i := 0; i < array_cap; i++ {
+			ok, err := encoder.decode(v.Index(i))
+			if !ok {
 				return false, err
 			}
+		}
 
-			stringBuff := make([]byte, length)
-			_, err = encoder.buff.Read(stringBuff)
+		return true, nil
+	case majorTypeMap:
+		map_length, err := decodeInt(headerAdditionInfo, buff)
 
-			if err != nil {
-				return false, err
+		if err != nil {
+			return false, err
+		}
+
+		if v.Kind() == reflect.Map {
+			v.Set(reflect.MakeMap(v.Type()))
+
+			for i := 0; i < map_length; i++ {
+				key := reflect.New(v.Type().Key())
+
+				ok, err := encoder.decode(key.Elem())
+				if !ok {
+					return false, err
+				}
+
+				value := reflect.New(v.Type().Elem())
+
+				ok, err = encoder.decode(value.Elem())
+				if !ok {
+					return false, err
+				}
+
+				v.SetMapIndex(key.Elem(), value.Elem())
+			}
+		} else if v.Kind() == reflect.Struct {
+			v.Set(reflect.New(v.Type()).Elem())
+
+			structFieldList := []string{}
+
+			for i := 0; i < v.NumField(); i++ {
+				structFieldList = append(structFieldList, v.Type().Field(i).Name)
 			}
 
-			v.Set(reflect.ValueOf(string(stringBuff)))
+			for i := 0; i < map_length; i++ {
+				var key string
 
-			return true, nil
-		case majorTypeArray:
-			array_cap, err := decodeInt(headerAdditionInfo, buff)
+				ok, err := encoder.decode(reflect.ValueOf(&key).Elem())
+				if !ok {
+					return false, err
+				}
 
-			if err != nil {
-				return false, err
-			}
+				ok, fieldName := lookupField(key, structFieldList)
 
-			v.Set(reflect.MakeSlice(v.Type(), array_cap, array_cap))
+				if !ok {
+					return false, fmt.Errorf("Field %s not strut %v", key, v)
+				}
 
-			for i:=0; i<array_cap; i++ {
-				ok, err := encoder.decode(v.Index(i))
+				ok, err = encoder.decode(v.FieldByName(fieldName))
+
 				if !ok {
 					return false, err
 				}
 			}
-
+		}
+		return true, nil
+	case majorTypeTags:
+		return false, fmt.Errorf("Tags not support")
+	case majorTypeSimpleAndFloat:
+		switch headerAdditionInfo {
+		case additionalTypeIntFalse:
+			if v.Kind() != reflect.Bool {
+				return false, fmt.Errorf("Can convert %s to bool", v.Type())
+			}
+			v.Set(reflect.ValueOf(false))
 			return true, nil
-		case majorTypeMap:
-			map_length, err := decodeInt(headerAdditionInfo, buff)
+		case additionalTypeIntTrue:
+			if v.Kind() != reflect.Bool {
+				return false, fmt.Errorf("Can convert %s to bool", v.Type())
+			}
+			v.Set(reflect.ValueOf(true))
+			return true, nil
+		case additionalTypeIntNull:
+			return true, nil
+		case additionalTypeFloat16:
+			return true, fmt.Errorf("Float16 decode not support")
+		case additionalTypeFloat32:
+			if v.Kind() != reflect.Float32 {
+				return false, fmt.Errorf("Can convert %s to float32", v.Type())
+			}
+			var out float32
+			err := unpack(buff, &out)
 
 			if err != nil {
 				return false, err
 			}
 
-			if v.Kind() == reflect.Map {
-				v.Set(reflect.MakeMap(v.Type()))
-
-				for i:=0; i<map_length; i++ {
-					key := reflect.New(v.Type().Key())
-
-					ok, err := encoder.decode(key.Elem())
-					if !ok {
-						return false, err
-					}
-
-					value := reflect.New(v.Type().Elem())
-
-					ok, err = encoder.decode(value.Elem())
-					if !ok {
-						return false, err
-					}
-
-					v.SetMapIndex(key.Elem(), value.Elem())
-				}
-			} else if v.Kind() == reflect.Struct {
-				v.Set(reflect.New(v.Type()).Elem())
-
-				structFieldList := []string{}
-
-				for i:=0; i< v.NumField(); i++ {
-					structFieldList = append(structFieldList, v.Type().Field(i).Name)
-				}
-
-				for i:=0; i<map_length; i++ {
-					var key string
-
-					ok, err := encoder.decode(reflect.ValueOf(&key).Elem())
-					if !ok {
-						return false, err
-					}
-
-					ok, fieldName := lookupField(key, structFieldList)
-
-					if !ok {
-						return false, fmt.Errorf("Field %s not strut %v", key, v)
-					}
-
-					ok, err = encoder.decode(v.FieldByName(fieldName))
-
-					if !ok {
-						return false, err
-					}
-				}
+			if v.Kind() == reflect.Float32 {
+				v.Set(reflect.ValueOf(&out).Elem())
+			} else if v.Kind() == reflect.Float64 {
+				out64 := float64(out)
+				v.Set(reflect.ValueOf(&out64).Elem())
+			} else {
+				return false, fmt.Errorf("Can convert %s to float32", v.Type())
 			}
+
 			return true, nil
-		case majorTypeTags:
-			return false, fmt.Errorf("Tags not support")
-		case majorTypeSimpleAndFloat:
-			switch headerAdditionInfo {
-			case additionalTypeIntFalse:
-				if v.Kind() != reflect.Bool {
-					return false, fmt.Errorf("Can convert %s to bool", v.Type())
-				}
-				v.Set(reflect.ValueOf(false))
-				return true, nil
-			case additionalTypeIntTrue:
-				if v.Kind() != reflect.Bool {
-					return false, fmt.Errorf("Can convert %s to bool", v.Type())
-				}
-				v.Set(reflect.ValueOf(true))
-				return true, nil
-			case additionalTypeIntNull:
-				return true, nil
-			case additionalTypeFloat16:
-				return true, fmt.Errorf("Float16 decode not support")
-			case additionalTypeFloat32:
-				if v.Kind() != reflect.Float32 {
-					return false, fmt.Errorf("Can convert %s to float32", v.Type())
-				}
-				var out float32
-				err := unpack(buff, &out)
+		case additionalTypeFloat64:
+			var out float64
+			err := unpack(buff, &out)
 
-				if err != nil {
-					return false, err
-				}
-
-				if v.Kind() == reflect.Float32 {
-					v.Set(reflect.ValueOf(&out).Elem())
-				} else if v.Kind() == reflect.Float64 {
-					out64 := float64(out)
-					v.Set(reflect.ValueOf(&out64).Elem())
-				} else {
-					return false, fmt.Errorf("Can convert %s to float32", v.Type())
-				}
-
-				return true, nil
-			case additionalTypeFloat64:
-				var out float64
-				err := unpack(buff, &out)
-
-				if err != nil {
-					return false, err
-				}
-
-				if v.Kind() == reflect.Float64 {
-					v.Set(reflect.ValueOf(&out).Elem())
-				} else if v.Kind() == reflect.Float32 {
-					out32 := float32(out)
-					v.Set(reflect.ValueOf(&out32).Elem())
-				} else {
-					return false, fmt.Errorf("Can convert %s to float64", v.Type())
-				}
-
-				return true, nil
+			if err != nil {
+				return false, err
 			}
+
+			if v.Kind() == reflect.Float64 {
+				v.Set(reflect.ValueOf(&out).Elem())
+			} else if v.Kind() == reflect.Float32 {
+				out32 := float32(out)
+				v.Set(reflect.ValueOf(&out32).Elem())
+			} else {
+				return false, fmt.Errorf("Can convert %s to float64", v.Type())
+			}
+
+			return true, nil
+		}
 	}
 
 	return true, nil
@@ -395,16 +395,16 @@ func decodeInt(headerAdditionInfo byte, buff []byte) (int, error) {
 	return number, nil
 }
 
-func unpack(byteBuff []byte, target interface{}) (error){
+func unpack(byteBuff []byte, target interface{}) error {
 	buf := bytes.NewReader(byteBuff)
 	err := binary.Read(buf, binary.BigEndian, target)
 	return err
 }
 
 /**
-	Encoding float32/float64
- */
-func (encoder *cborEncode)encodeFloat(number interface{}, additionalFloatType byte)(bool, error){
+Encoding float32/float64
+*/
+func (encoder *cborEncode) encodeFloat(number interface{}, additionalFloatType byte) (bool, error) {
 	majorType := majorTypeSimpleAndFloat
 
 	initByte, err := packInitByte(majorType, additionalFloatType)
@@ -445,9 +445,9 @@ func (encoder *cborEncode)encodeFloat(number interface{}, additionalFloatType by
 }
 
 /**
-	encoding nil
- */
-func (encoder *cborEncode) encodeNil() (bool, error){
+encoding nil
+*/
+func (encoder *cborEncode) encodeNil() (bool, error) {
 	byteArr, err := packInitByte(majorTypeSimpleAndFloat, additionalTypeIntNull)
 	if err != nil {
 		return false, err
@@ -457,9 +457,9 @@ func (encoder *cborEncode) encodeNil() (bool, error){
 }
 
 /**
-	encode
- */
-func (encoder *cborEncode)encodeBool(variable bool) (bool, error){
+encode
+*/
+func (encoder *cborEncode) encodeBool(variable bool) (bool, error) {
 	varType := additionalTypeIntFalse
 	if variable {
 		varType = additionalTypeIntTrue
@@ -480,10 +480,8 @@ func (encoder *cborEncode)encodeBool(variable bool) (bool, error){
 	return true, nil
 }
 
-/**
-	Encode array to CBOR binary string
- */
-func (encoder *cborEncode)encodeArray(variable interface{}) (bool, error) {
+// Encode array to CBOR binary string
+func (encoder *cborEncode) encodeArray(variable interface{}) (bool, error) {
 	majorType := majorTypeArray
 	inputSlice := reflect.ValueOf(variable)
 	length := inputSlice.Len()
@@ -500,7 +498,7 @@ func (encoder *cborEncode)encodeArray(variable interface{}) (bool, error) {
 		return false, err
 	}
 	//array slice encode
-	for i:=0; i < inputSlice.Len(); i++ {
+	for i := 0; i < inputSlice.Len(); i++ {
 		ok, err := encoder.encodeValue(inputSlice.Index(i).Interface())
 		if !ok {
 			return false, err
@@ -511,17 +509,17 @@ func (encoder *cborEncode)encodeArray(variable interface{}) (bool, error) {
 }
 
 //ecnode struct
-func (encoder *cborEncode)encodeStruct(variable interface{}) (bool, error) {
+func (encoder *cborEncode) encodeStruct(variable interface{}) (bool, error) {
 	majorType := majorTypeMap
 
-	inputStructValue:= reflect.ValueOf(variable)
-	inputStructType:= inputStructValue.Type()
+	inputStructValue := reflect.ValueOf(variable)
+	inputStructType := inputStructValue.Type()
 
 	length := inputStructValue.NumField()
 
 	publicRange := 0
 
-	for i:=0; i<length; i++ {
+	for i := 0; i < length; i++ {
 		fieldType := inputStructType.Field(i)
 		if fieldType.PkgPath != "" {
 			continue
@@ -542,14 +540,28 @@ func (encoder *cborEncode)encodeStruct(variable interface{}) (bool, error) {
 	_, err = encoder.buff.Write(buff)
 
 	if err != nil {
-		return  false, err
+		return false, err
 	}
 
 	//struct encode
-	for i:=0; i<length; i++ {
+	for i := 0; i < length; i++ {
 		fieldType := inputStructType.Field(i)
 		if fieldType.PkgPath != "" {
 			continue
+		}
+
+		switch fieldType.Tag.Get("tag") {
+		case "":
+		case "base64":
+			buff, err := packNumber(majorTypeTags, uint64(34))
+			if err != nil {
+				return false, err
+			}
+			_, err = encoder.buff.Write(buff)
+
+			if err != nil {
+				return false, err
+			}
 		}
 
 		keyOk, keyErr := encoder.encodeValue(strings.ToLower(fieldType.Name))
@@ -568,10 +580,8 @@ func (encoder *cborEncode)encodeStruct(variable interface{}) (bool, error) {
 	return true, nil
 }
 
-/**
-	Encode map to CBOR binary string
- */
-func (encoder *cborEncode)encodeMap(variable interface{}) (bool, error) {
+// Encode map to CBOR binary string
+func (encoder *cborEncode) encodeMap(variable interface{}) (bool, error) {
 	majorType := majorTypeMap
 	inputSlice := reflect.ValueOf(variable)
 	length := inputSlice.Len()
@@ -606,9 +616,9 @@ func (encoder *cborEncode)encodeMap(variable interface{}) (bool, error) {
 }
 
 /**
-	Encode string to CBOR binary string
- */
-func (encoder *cborEncode)encodeString(variable string) (bool, error) {
+Encode string to CBOR binary string
+*/
+func (encoder *cborEncode) encodeString(variable string) (bool, error) {
 	byteBuf := []byte(variable)
 
 	majorType := majorTypeUtf8String
@@ -639,9 +649,9 @@ func (encoder *cborEncode)encodeString(variable string) (bool, error) {
 }
 
 /**
-	Encode integer to CBOR binary string
- */
-func (encoder *cborEncode)encodeNumber(variable int) (bool, error) {
+Encode integer to CBOR binary string
+*/
+func (encoder *cborEncode) encodeNumber(variable int) (bool, error) {
 	var majorType = majorTypeUnsignedInt
 
 	var unsignedVariable uint64
@@ -668,9 +678,9 @@ func (encoder *cborEncode)encodeNumber(variable int) (bool, error) {
 }
 
 /**
-	Pack number helper
- */
-func packNumber(majorType byte, number uint64) ([]byte, error){
+Pack number helper
+*/
+func packNumber(majorType byte, number uint64) ([]byte, error) {
 	if number < additionalMax {
 		return packInitByte(majorType, byte(number))
 	}
@@ -686,7 +696,7 @@ func packNumber(majorType byte, number uint64) ([]byte, error){
 	var packedInfo []byte
 	var errPack error
 
-	switch additionInfo	{
+	switch additionInfo {
 	case additionalTypeIntUint8:
 		packedInfo, errPack = pack(uint8(number))
 	case additionalTypeIntUint16:
@@ -705,8 +715,8 @@ func packNumber(majorType byte, number uint64) ([]byte, error){
 }
 
 /**
-	Helper for packing Go objects. Like in C, PHP function pack()
- */
+Helper for packing Go objects. Like in C, PHP function pack()
+*/
 func pack(packVariable interface{}) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
@@ -720,16 +730,16 @@ func pack(packVariable interface{}) ([]byte, error) {
 }
 
 /**
-	Pack initial bye
+Pack initial bye
 */
 func packInitByte(majorType byte, additionalInfo byte) ([]byte, error) {
 	return pack(majorType | additionalInfo)
 }
 
 /**
-	Get CBOR additional info type for number
+Get CBOR additional info type for number
 */
-func intTypeToCborType(number uint64) (byte) {
+func intTypeToCborType(number uint64) byte {
 	switch {
 	case number < 256:
 		return additionalTypeIntUint8

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
-	"strings"
 	"unicode/utf8"
 )
 
@@ -351,10 +350,8 @@ func (encoder *cborEncode) decode(v reflect.Value) (bool, error) {
 }
 
 func lookupField(field string, fieldList []string) (bool, string) {
-	field = strings.ToLower(field)
-
 	for _, currentField := range fieldList {
-		if field != strings.ToLower(currentField) {
+		if field != currentField {
 			continue
 		}
 		return true, currentField
@@ -564,7 +561,7 @@ func (encoder *cborEncode) encodeStruct(variable interface{}) (bool, error) {
 			}
 		}
 
-		keyOk, keyErr := encoder.encodeValue(strings.ToLower(fieldType.Name))
+		keyOk, keyErr := encoder.encodeValue(fieldType.Name)
 
 		if !keyOk {
 			return false, keyErr
